@@ -1,0 +1,96 @@
+Changes for protocol filed for evpn mh feature. Changes applied from https://lore.kernel.org/netdev/20250816031145.1153429-1-mrghosh@cisco.com/T/#u
+
+From: vedganes <veda.ganesan@nokia.com>
+
+
+---
+ bridge/fdb.c                   |   20 +++++++++++++++++++-
+ include/uapi/linux/rtnetlink.h |    1 +
+ lib/rt_names.c                 |    1 +
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/bridge/fdb.c b/bridge/fdb.c
+index d57b5750..9c5dd763 100644
+--- a/bridge/fdb.c
++++ b/bridge/fdb.c
+@@ -41,7 +41,7 @@ static void usage(void)
+ 		"              [ sticky ] [ local | static | dynamic ] [ vlan VID ]\n"
+ 		"              { [ dst IPADDR ] [ port PORT] [ vni VNI ] | [ nhid NHID ] }\n"
+ 		"	       [ via DEV ] [ src_vni VNI ] [ activity_notify ]\n"
+-		"	       [ inactive ] [ norefresh ]\n"
++		"	       [ inactive ] [ norefresh ] [ protocol PROTO ]\n"
+ 		"       bridge fdb [ show [ br BRDEV ] [ brport DEV ] [ vlan VID ]\n"
+ 		"              [ state STATE ] [ dynamic ] ]\n"
+ 		"       bridge fdb get [ to ] LLADDR [ br BRDEV ] { brport | dev } DEV\n"
+@@ -306,8 +306,18 @@ int print_fdb(struct nlmsghdr *n, void *arg)
+ 		print_string(PRINT_ANY, "master", "master %s ",
+ 			     ll_index_to_name(rta_getattr_u32(tb[NDA_MASTER])));
+ 
++	if (tb[NDA_PROTOCOL]) {
++		__u8 proto = rta_getattr_u8(tb[NDA_PROTOCOL]);
++		if (proto != RTPROT_UNSPEC) {
++			SPRINT_BUF(b1);
++			print_string(PRINT_ANY, "protocol", "proto %s ",
++					 rtnl_rtprot_n2a(proto, b1, sizeof(b1)));
++		}
++	}
+ 	print_string(PRINT_ANY, "state", "%s\n",
+ 			   state_n2a(r->ndm_state));
++
++
+ 	close_json_object();
+ 	fflush(fp);
+ 	return 0;
+@@ -478,6 +488,7 @@ static int fdb_modify(int cmd, int flags, int argc, char **argv)
+ 	char *endptr;
+ 	short vid = -1;
+ 	__u32 nhid = 0;
++	__u32 proto = RTPROT_UNSPEC;
+ 
+ 	while (argc > 0) {
+ 		if (strcmp(*argv, "dev") == 0) {
+@@ -555,6 +566,10 @@ static int fdb_modify(int cmd, int flags, int argc, char **argv)
+ 			inactive = true;
+ 		} else if (strcmp(*argv, "norefresh") == 0) {
+ 			norefresh = true;
++		} else if (matches(*argv, "protocol") == 0) {
++			NEXT_ARG();
++			if (rtnl_rtprot_a2n(&proto, *argv))
++				invarg("\"protocol\" value is invalid\n", *argv);
+ 		} else {
+ 			if (strcmp(*argv, "to") == 0)
+ 				NEXT_ARG();
+@@ -615,6 +630,9 @@ static int fdb_modify(int cmd, int flags, int argc, char **argv)
+ 	if (via)
+ 		addattr32(&req.n, sizeof(req), NDA_IFINDEX, via);
+ 
++	if (proto != RTPROT_UNSPEC)
++		addattr8(&req.n, sizeof(req), NDA_PROTOCOL, proto);
++
+ 	req.ndm.ndm_ifindex = ll_name_to_index(d);
+ 	if (!req.ndm.ndm_ifindex)
+ 		return nodev(d);
+diff --git a/include/uapi/linux/rtnetlink.h b/include/uapi/linux/rtnetlink.h
+index 085bb139..1ff9dbee 100644
+--- a/include/uapi/linux/rtnetlink.h
++++ b/include/uapi/linux/rtnetlink.h
+@@ -314,6 +314,7 @@ enum {
+ #define RTPROT_OSPF		188	/* OSPF Routes */
+ #define RTPROT_RIP		189	/* RIP Routes */
+ #define RTPROT_EIGRP		192	/* EIGRP Routes */
++#define RTPROT_HW		193	/* HW Generated Routes */
+ 
+ /* rtm_scope
+ 
+diff --git a/lib/rt_names.c b/lib/rt_names.c
+index 7dc194b1..b9bc1b50 100644
+--- a/lib/rt_names.c
++++ b/lib/rt_names.c
+@@ -148,6 +148,7 @@ static char *rtnl_rtprot_tab[256] = {
+ 	[RTPROT_OSPF]	    = "ospf",
+ 	[RTPROT_RIP]	    = "rip",
+ 	[RTPROT_EIGRP]	    = "eigrp",
++	[RTPROT_HW]	    = "hw",
+ };
+ 
+ struct tabhash {
