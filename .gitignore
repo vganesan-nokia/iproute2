@@ -19,15 +19,8 @@ TAGS
 !.mailmap
 
 # for patch generation
-*.diff
-*.patch
-*.orig
-*.rej
 
 # for quilt
-.pc
-patches
-series
 
 # for gdb
 .gdbinit
